@@ -1,0 +1,4 @@
+recursive-include oursqlx *.pyx *.pxi *.c *.h
+include exception_generator.py
+include errnos_generator.py
+include CHANGELOG COPYING

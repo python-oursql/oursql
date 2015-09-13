@@ -1,0 +1,41 @@
+0.9.2 -> 0.9.3
+--------------
+
+  * Releasing the GIL for a few more functions that query the remote mysql
+    server, fixing launchpad bug #582124.
+  * Fixing a memory leak caused by a half-finished code refactor.
+  * Working around mysql sometimes returning invalid date data, fixing 
+    launchpad bug #672059.
+
+0.9.1 -> 0.9.2
+--------------
+
+  * Recategorized ER_DUP_ENTRY as an IntegrityError.
+  * Made Connection objects usable as context managers, fixing launchpad bug 
+    #506821.
+  * Calling mysql_library_init() in initoursql() to prevent potential problems 
+    with multithreading.
+  * Fixed IterWrapper to call iter() on what it's passed, fixing launchpad bug 
+    #545104.
+
+0.9 -> 0.9.1
+------------
+
+  * Fixed something that broke 2.5- compatibility.
+  * Fixed mingw support.
+  * Fixed the license in COPYING.
+  * Added a distutils command to zip binary installers with a license file, for
+    BSD license compliance.
+
+0.1 -> 0.9
+----------
+
+  * Fixed a bug in oursql.Connection._escape_string and 
+    oursql.Connection._escape_unicode_string when called with 0-length 
+    strings.
+  * Fixed FreeBSD support in pstdint.h.
+  * Worked around a bug in setuptools in setup.py.
+  * Added support for MYSQL_CONFIG.
+  * Added many more parameters for oursql.connect.
+  * Mapped more MySQL errors to oursql exceptions.
+  * Added oursql.errnos.
