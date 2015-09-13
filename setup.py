@@ -9,12 +9,11 @@ import zipfile
 import os
 
 try:
-    import _winreg
+    import winreg
 except ImportError:
-    _winreg = None
+    winreg = None
 
-# This is the only way to make old-style classes respect setter properties. :(
-class MysqlExtension(Extension, object):
+class MysqlExtension(Extension):
     def __init__(self, *a, **kw):
         self.use_mysql_flags = True
         self._extra_compile_args = []
@@ -50,7 +49,7 @@ oursql_ext = MysqlExtension("oursql", ["oursqlx/compat.c"])
 try:
     from Cython.Distutils import build_ext
 except ImportError:
-    print "cython not found, using previously-cython'd .c file."
+    print("cython not found, using previously-cython'd .c file.")
     oursql_ext.sources.insert(0, 'oursqlx/oursql.c')
 else:
     oursql_ext.sources.insert(0, 'oursqlx/oursql.pyx')
@@ -86,14 +85,14 @@ class oursql_build_ext(build_ext):
     
     def get_mysql_config(self, option):
         args = [self.mysql_config, '--%s' % option]
-        print ' '.join(args)
+        print(' '.join(args))
         try:
             proc = subprocess.Popen(args, stdout=subprocess.PIPE)
         except:
-            print 'failed to execute', args[0]
+            print('failed to execute', args[0])
             raise
         stdout, _ = proc.communicate()
-        return split_quoted(stdout.strip())
+        return split_quoted(stdout.strip().decode())
     
     def setup_posixish(self, ext):
         ext.get_mysql_compile_args = (
@@ -109,9 +108,9 @@ class oursql_build_ext(build_ext):
         if self.mysql_root:
             mysql_root = self.mysql_root
         else:
-            mysql_key = _winreg.OpenKey(
-                _winreg.HKEY_LOCAL_MACHINE, self.mysql_registry_key)
-            mysql_root, _ = _winreg.QueryValueEx(mysql_key, 'Location')
+            mysql_key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE, self.mysql_registry_key)
+            mysql_root, _ = winreg.QueryValueEx(mysql_key, 'Location')
         
         if self.static:
             client = "mysqlclient"
@@ -138,10 +137,10 @@ class oursql_build_ext(build_ext):
                 proc = subprocess.Popen([self.mysql_config], 
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             except OSError:
-                if _winreg:
+                if winreg:
                     self.setup_windowsish(ext)
                 else:
-                    print ('warning: no usable mysql_config and no _winreg '
+                    print('warning: no usable mysql_config and no winreg '
                         'module to try; hopefully you have usable '
                         'CFLAGS/LDFLAGS set.')
             else:
@@ -205,7 +204,7 @@ oursql_commands['zipwithlicense'] = ZipWithLicense
 
 setup(
     name='oursql',
-    version='0.9.3',
+    version='0.9.4',
     author='Aaron Gallagher',
     author_email='habnabit@gmail.com',
     url='http://launchpad.net/oursql',
@@ -226,7 +225,7 @@ setup(
         'Operating System :: OS Independent',
         'Programming Language :: C',
         'Programming Language :: Cython',
-        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 3',
         'Topic :: Database :: Database Engines/Servers',
     ],
     

@@ -41,7 +41,7 @@ cdef class _ResultSet:
         
         if self.fields:
             self.description = description_from_res(
-                self.res, self.fields, self.show_table)
+                conn, self.res, self.fields, self.show_table)
             self.conversion_info = conversion_info_from_res(
                 self.res, self.fields)
             self.column_names = [d[0] for d in self.description]
@@ -94,7 +94,7 @@ cdef class _ResultSet:
             if not row[i]:
                 d = None
             else:
-                d = PyString_FromStringAndSize(row[i], lengths[i])
+                d = PyBytes_FromStringAndSize(row[i], lengths[i])
                 field_type, flags, charsetnr = self.conversion_info[i]
                 converter = self.conversions_dict.get(field_type)
                 if converter:
@@ -130,9 +130,8 @@ cdef class _Query:
         cdef Py_ssize_t qlen
         conn._check_closed()
         self.conn = conn
-        if PyUnicode_Check(query):
-            query = query.encode(self.conn.charset)
-        PyString_AsStringAndSize(query, &qstr, &qlen)
+        query = bytes_maybe_from_encoding(query, self.conn.charset, False)
+        PyBytes_AsStringAndSize(query, &qstr, &qlen)
         if mysql_real_query(self.conn.conn, qstr, qlen):
             self._raise_error()
         self.res_a, self.res_kw = a, kw

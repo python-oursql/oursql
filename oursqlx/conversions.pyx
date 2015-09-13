@@ -3,7 +3,7 @@ import decimal, datetime, time
 def _bitval_from_string(s):
     cdef Py_ssize_t length
     cdef unsigned char *ss
-    PyString_AsStringAndSize(s, <char **>&ss, &length)
+    PyBytes_AsStringAndSize(s, <char **>&ss, &length)
     return bitval_from_char_p(ss, length)
 
 def _datetime_from_string(s):
@@ -50,7 +50,7 @@ _conversions = {
 Timestamp = datetime.datetime
 Date = datetime.date
 Time = datetime.time
-Binary = buffer
+Binary = bytes
 
 def TimestampFromTicks(ticks):
     """TimestampFromTicks(ticks) -> Timestamp.

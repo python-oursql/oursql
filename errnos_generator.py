@@ -22,7 +22,7 @@ PyObject *_oursqlx_generate_errno_dict(void) {
 
 error_template = """
 #ifdef %(error)s
-    if (!(val = PyInt_FromLong(%(error)s)))
+    if (!(val = PyLong_FromLong(%(error)s)))
         goto value_error;
     if (PyDict_SetItemString(ret, "%(error)s", val) == -1)
         goto set_error;
@@ -740,4 +740,4 @@ def main(outfile):
     ))
 
 if __name__ == '__main__':
-    main(open(sys.argv[1], 'wb'))
+    main(open(sys.argv[1], 'w'))

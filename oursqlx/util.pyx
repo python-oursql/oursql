@@ -1,3 +1,16 @@
+cdef object bytes_maybe_from_encoding(object s, object encoding, 
+        bint allow_none=True):
+    if s is None and allow_none:
+        return None
+    elif PyUnicode_Check(s):
+        s = s.encode(encoding)
+    return PyBytes_FromObject(s)
+
+cdef char *bytes_or_null(object s):
+    if s is None:
+        return NULL
+    return PyBytes_AS_STRING(s)
+
 cdef unsigned long bitval_from_char_p(unsigned char *s, Py_ssize_t length):
     cdef Py_ssize_t i
     cdef unsigned long ret = 0
@@ -19,17 +32,18 @@ cdef object conversion_info_from_res(MYSQL_RES *res, int fields):
         PyList_SET_ITEM(ret, i, data)
     return ret
 
-cdef object description_from_res(MYSQL_RES *res, int fields, bint show_table):
+cdef object description_from_res(Connection conn, MYSQL_RES *res, int fields, 
+        bint show_table):
     cdef int i
     cdef MYSQL_FIELD *field
     ret = PyList_New(fields)
+    # Cache the charset.
+    conn.charset
     for 0 <= i < fields:
         field = mysql_fetch_field_direct(res, i)
+        name = conn._decode_char_p(field.name)
         if show_table and field.table[0] != 0:
-            name = PyString_FromFormat("%s.%s", 
-                field.table, field.name)
-        else:
-            name = field.name
+            name = u'%s.%s' % (conn._decode_char_p(field.table), name)
         data = (
             name,
             field.type,

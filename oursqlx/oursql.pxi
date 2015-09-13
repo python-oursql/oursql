@@ -21,7 +21,6 @@ cdef extern from "compat.h" nogil:
     my_bool _oursqlx_init_stmt_cursor(MYSQL_STMT *, unsigned long *)
     my_bool _oursqlx_stmt_set_prefetch_rows(MYSQL_STMT *, unsigned long *)
     int _oursqlx_stmt_cursor_prefetch(MYSQL_STMT *, int *)
-    int _oursqlx_PyObject_AsReadBuffer(object, void **, Py_ssize_t *) except -1
     _oursqlx_exception_type _oursqlx_exc_from_errno(int)
     object _oursqlx_escape_string(MYSQL *, object)
     object _oursqlx_generate_errno_dict()
@@ -47,20 +46,21 @@ cdef extern from "Python.h":
     object PyTuple_GET_ITEM(object, Py_ssize_t)
     void PyTuple_SET_ITEM(object, Py_ssize_t, object)
     
-    int Py_END_OF_BUFFER
-    bint PyBuffer_Check(object)
-    object PyBuffer_FromObject(object, Py_ssize_t, Py_ssize_t)
-    
-    object PyString_FromString(void *)
-    object PyString_FromStringAndSize(void *, Py_ssize_t)
-    object PyString_FromFormat(char *, ...)
-    int PyString_AsStringAndSize(object, char **, Py_ssize_t *) except -1
-    int PyString_Check(object)
-    char *PyString_AsString(object) except NULL
-    char *PyString_AS_STRING(object)
-    Py_ssize_t PyString_GET_SIZE(object)
+    object PyBytes_FromString(void *)
+    object PyBytes_FromStringAndSize(void *, Py_ssize_t)
+    object PyBytes_FromFormat(char *, ...)
+    object PyBytes_FromObject(object)
+    int PyBytes_AsStringAndSize(object, char **, Py_ssize_t *) except -1
+    int PyBytes_Check(object)
+    char *PyBytes_AsString(object) except NULL
+    char *PyBytes_AS_STRING(object)
+    Py_ssize_t PyBytes_GET_SIZE(object)
     
     bint PyUnicode_Check(object)
+    object PyUnicode_FromString(char *)
+    object PyUnicode_FromStringAndSize(char *, Py_ssize_t)
+    object PyUnicode_AsUTF8String(object)
+    object PyUnicode_Decode(char *, Py_ssize_t, char *, char *)
     
     bint PyInt_Check(object)
     long PyInt_AS_LONG(object)
@@ -86,8 +86,34 @@ cdef extern from "Python.h":
     # raaaaaauuuuugh
     void Py_INCREF(object)
 
+cdef extern from "datetime.h":
+    bint PyDate_Check(object)
+    object PyDate_FromDate(int, int, int)
+    object PyDate_FromTimestamp(object)
+    int PyDateTime_GET_YEAR(object)
+    int PyDateTime_GET_MONTH(object)
+    int PyDateTime_GET_DAY(object)
+    
+    bint PyDateTime_Check(object)
+    object PyDateTime_FromDateAndTime(int, int, int, int, int, int, int)
+    object PyDateTime_FromTimestamp(object)
+    int PyDateTime_DATE_GET_HOUR(object)
+    int PyDateTime_DATE_GET_MINUTE(object)
+    int PyDateTime_DATE_GET_SECOND(object)
+    int PyDateTime_DATE_GET_MICROSECOND(object)
+    
+    bint PyTime_Check(object)
+    object PyTime_FromTime(int, int, int, int)
+    int PyDateTime_TIME_GET_HOUR(object)
+    int PyDateTime_TIME_GET_MINUTE(object)
+    int PyDateTime_TIME_GET_SECOND(object)
+    int PyDateTime_TIME_GET_MICROSECOND(object)
+
+    int PyDateTime_IMPORT
+
 cdef extern from "string.h":
     int strcmp(char *, char *)
+    Py_ssize_t strlen(char *)
     void *memset(void *, int, Py_ssize_t)
     void *memcpy(void *, void *, Py_ssize_t)
 

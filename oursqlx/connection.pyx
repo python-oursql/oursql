@@ -69,19 +69,18 @@ cdef class Connection:
     
     cdef object __weakref__
     cdef MYSQL *conn
-    cdef object _charset, _context_cursors
+    cdef object _charset, _charset_bytes, _context_cursors
     cdef readonly int use_unicode, autoping, raise_on_warnings
     cdef public object default_cursor
     
-    def __cinit__(self, char *host=NULL, char *user=NULL, char *passwd=NULL, *,
-            char *db=NULL, unsigned int port=0, char *unix_socket=NULL, 
-            connect_timeout=None, read_timeout=None, write_timeout=None, 
-            protocol=None, ssl=None, char *read_default_file=NULL, 
-            char *read_default_group=NULL, char *init_command=NULL, 
-            char *charset_dir=NULL, char *shared_memory_base_name=NULL, 
+    def __cinit__(self, host=None, user=None, passwd=None, *, db=None, 
+            unsigned int port=0, unix_socket=None, connect_timeout=None, 
+            read_timeout=None, write_timeout=None, protocol=None, ssl=None, 
+            read_default_file=None, read_default_group=None, init_command=None, 
+            charset_dir=None, shared_memory_base_name=None, 
             bint local_infile=False, bint require_secure_auth=False, 
             bint compress=False, bint report_truncation=True, 
-            bint found_rows=True, bint use_unicode=True, str charset='utf8',
+            bint found_rows=True, bint use_unicode=True, charset='utf8', 
             bint autoping=False, default_cursor=None, 
             bint raise_on_warnings=True, bint multi_results=True, 
             bint multi_statements=True, bint autoreconnect=False):
@@ -103,6 +102,11 @@ cdef class Connection:
             raise MemoryError('alloc of conn object failed')
         if protocol not in _protocol_enum_map:
             raise ProgrammingError('unknown protocol %r' % (protocol,))
+        host = bytes_maybe_from_encoding(host, charset)
+        user = bytes_maybe_from_encoding(user, charset)
+        passwd = bytes_maybe_from_encoding(passwd, charset)
+        db = bytes_maybe_from_encoding(db, charset)
+        unix_socket = bytes_maybe_from_encoding(unix_socket, charset)
         uint_tmp = _protocol_enum_map[protocol]
         mysql_options(self.conn, MYSQL_OPT_PROTOCOL, <char *>&uint_tmp)
         bool_tmp = report_truncation
@@ -123,31 +127,44 @@ cdef class Connection:
             mysql_options(self.conn, 
                 MYSQL_OPT_WRITE_TIMEOUT, <char *>&uint_tmp)
         if read_default_file:
+            read_default_file = bytes_maybe_from_encoding(
+                read_default_file, charset)
             mysql_options(self.conn, 
-                MYSQL_READ_DEFAULT_FILE, read_default_file)
+                MYSQL_READ_DEFAULT_FILE, bytes_or_null(read_default_file))
         if read_default_group:
+            read_default_group = bytes_maybe_from_encoding(
+                read_default_group, charset)
             mysql_options(self.conn, 
-                MYSQL_READ_DEFAULT_GROUP, read_default_group)
+                MYSQL_READ_DEFAULT_GROUP, bytes_or_null(read_default_group))
         if init_command:
-            mysql_options(self.conn, MYSQL_INIT_COMMAND, init_command)
-        if charset_dir:
-            mysql_options(self.conn, MYSQL_SET_CHARSET_DIR, charset_dir)
-        if shared_memory_base_name:
+            init_command = bytes_maybe_from_encoding(init_command, charset)
             mysql_options(self.conn, 
-                MYSQL_SHARED_MEMORY_BASE_NAME, shared_memory_base_name)
+                MYSQL_INIT_COMMAND, bytes_or_null(init_command))
+        if charset_dir:
+            charset_dir = bytes_maybe_from_encoding(charset_dir, charset)
+            mysql_options(self.conn, 
+                MYSQL_INIT_COMMAND, bytes_or_null(charset_dir))
+        if shared_memory_base_name:
+            shared_memory_base_name = bytes_maybe_from_encoding(
+                shared_memory_base_name, charset)
+            mysql_options(self.conn, 
+                MYSQL_INIT_COMMAND, bytes_or_null(shared_memory_base_name))
         if local_infile:
             mysql_options(self.conn, MYSQL_OPT_LOCAL_INFILE, NULL)
+        if ssl is not None:
+            self._setup_ssl_options(charset, **ssl)
         if charset is not None:
+            charset = PyUnicode_AsUTF8String(charset)
             mysql_options(self.conn, 
-                MYSQL_SET_CHARSET_NAME, PyString_AS_STRING(charset))
+                MYSQL_SET_CHARSET_NAME, PyBytes_AS_STRING(charset))
+        if not mysql_real_connect(self.conn, bytes_or_null(host), 
+                bytes_or_null(user), bytes_or_null(passwd), bytes_or_null(db), 
+                port, bytes_or_null(unix_socket), flags):
+            self._raise_error()
         if autoreconnect:
             bool_tmp = True
             mysql_options(self.conn, MYSQL_OPT_RECONNECT, <char *>&bool_tmp)
-        if ssl is not None:
-            self._setup_ssl_options(**ssl)
-        if not mysql_real_connect(self.conn, host, user, passwd, db, port, 
-                unix_socket, flags):
-            self._raise_error()
+        self.charset
         self.use_unicode = use_unicode
         self.autoping = autoping
         if default_cursor is None:
@@ -156,9 +173,15 @@ cdef class Connection:
         self.raise_on_warnings = raise_on_warnings
         self._context_cursors = []
     
-    def _setup_ssl_options(self, *, char *key=NULL, char *cert=NULL, 
-            char *ca=NULL, char *capath=NULL, char *cipher=NULL):
-        mysql_ssl_set(self.conn, key, cert, ca, capath, cipher)
+    def _setup_ssl_options(self, charset, *, key=None, cert=None, ca=None, 
+            capath=None, cipher=None):
+        key = bytes_maybe_from_encoding(key, charset)
+        cert = bytes_maybe_from_encoding(cert, charset)
+        ca = bytes_maybe_from_encoding(ca, charset)
+        capath = bytes_maybe_from_encoding(capath, charset)
+        cipher = bytes_maybe_from_encoding(cipher, charset)
+        mysql_ssl_set(self.conn, bytes_or_null(key), bytes_or_null(cert), 
+            bytes_or_null(ca), bytes_or_null(capath), bytes_or_null(cipher))
     
     def close(self):
         """close()
@@ -180,7 +203,9 @@ cdef class Connection:
         # _raise_error can only be called internally, so we shouldn't need to
         # check for if the connection is closed.
         cdef int err = mysql_errno(self.conn)
-        raise _exception_from_errno(err)(mysql_error(self.conn), err)
+        self.charset
+        raise _exception_from_errno(err)(
+            self._decode_char_p(mysql_error(self.conn)), err)
     
     cdef int _check_closed(self) except -1:
         if not self.conn:
@@ -222,16 +247,24 @@ cdef class Connection:
         strings.
         """
         def __get__(self):
-            self._charset = PyString_FromString(
+            self._charset_bytes = PyBytes_FromString(
                 mysql_character_set_name(self.conn))
+            self._charset = PyUnicode_FromStringAndSize(
+                PyBytes_AS_STRING(self._charset_bytes),
+                PyBytes_GET_SIZE(self._charset_bytes))
             return self._charset
         def __set__(self, value):
-            cdef char *svalue
             self._check_closed()
-            svalue = PyString_AsString(value)
-            if mysql_set_character_set(self.conn, svalue):
+            svalue = PyUnicode_AsUTF8String(value)
+            if mysql_set_character_set(self.conn, PyBytes_AS_STRING(svalue)):
                 self._raise_error()
+            self._charset_bytes = svalue
             self._charset = value
+    
+    cdef object _decode_char_p(self, const_char *value):
+        cdef Py_ssize_t length = strlen(value)
+        return PyUnicode_Decode(value, length, 
+            PyBytes_AS_STRING(self._charset_bytes), "strict")
     
     def warning_count(self):
         """warning_count() -> int
@@ -257,8 +290,10 @@ cdef class Connection:
     
     property server_info:
         def __get__(self):
+            cdef const_char *info
             self._check_closed()
-            return mysql_get_server_info(self.conn)
+            self.charset
+            return self._decode_char_p(mysql_get_server_info(self.conn))
     
     property ssl_cipher:
         def __get__(self):
@@ -267,7 +302,8 @@ cdef class Connection:
             res = mysql_get_ssl_cipher(self.conn)
             if not res:
                 return None
-            return PyString_FromString(res)
+            self.charset
+            return self._decode_char_p(res)
     
     # Unless someone is monkeying around with calling __enter__ and __exit__
     # manually, this approach is the simplest. Yaaay mostly-reentrant code.
@@ -298,5 +334,5 @@ cdef class Connection:
         the connection's charset. As with _escape_string, please do not use 
         this function.
         """
-        return self._escape_string(
-            value.encode(self.charset)).decode(self.charset)
+        charset = self.charset
+        return self._escape_string(value.encode(charset)).decode(charset)

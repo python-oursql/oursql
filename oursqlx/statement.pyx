@@ -1,7 +1,7 @@
-import cStringIO
 import datetime
 import decimal
 import codecs
+import io
 
 cdef my_ulonglong ull_negone = <my_ulonglong>-1
 
@@ -12,7 +12,7 @@ cdef class _AbstractIterWrapper:
 cdef class _BinaryWhateverMixin:
     def __next__(self):
         ret = super(BinaryFileWrapper, self).next()
-        return PyBuffer_FromObject(ret, 0, Py_END_OF_BUFFER)
+        return ret
 
 cdef class IterWrapper(_AbstractIterWrapper):
     """IterWrapper(iterobj)
@@ -124,7 +124,11 @@ cdef class _Statement:
     
     cdef int _raise_error(self) except -1:
         cdef int err = mysql_stmt_errno(self.stmt)
-        raise _exception_from_errno(err)(mysql_stmt_error(self.stmt), err)
+        # effect a sideeffect by looking up the charset, required for
+        # _decode_char_p
+        self.conn.charset
+        raise _exception_from_errno(err)(
+            self.conn._decode_char_p(mysql_stmt_error(self.stmt)), err)
     
     cdef int _check_closed(self) except -1:
         if not self.conn.conn:
@@ -150,9 +154,9 @@ cdef class _Statement:
         if self.data_waiting:
             raise ProgrammingError('binding this query would cause rows to '
                 'become unfetchable')
-        if PyUnicode_Check(statement):
-            statement = statement.encode(self.conn.charset)
-        PyString_AsStringAndSize(statement, &buf, &bufsize)
+        statement = bytes_maybe_from_encoding(
+            statement, self.conn.charset, False)
+        PyBytes_AsStringAndSize(statement, &buf, &bufsize)
         if mysql_stmt_prepare(self.stmt, buf, bufsize):
             self._raise_error()
         self._alloc_buffer()
@@ -255,7 +259,7 @@ cdef class _Statement:
                 return
             try:
                 ret = description_from_res(
-                    res, self.result_fields, self.show_table)
+                    self.conn, res, self.result_fields, self.show_table)
             finally:
                 mysql_free_result(res)
             return ret
@@ -308,22 +312,19 @@ cdef class _Statement:
                     if o is None:
                         b.buffer_type = MYSQL_TYPE_NULL
                         b.buffer = NULL
-                    # I wish there was a better way to do this. The split
-                    # between str/unicode/buffer is to make sure that people
-                    # are really really sure that they're inserting raw binary
-                    # data into a database instead of strings.
-                    elif PyString_Check(o) or PyUnicode_Check(o):
+                    elif PyUnicode_Check(o):
                         b.buffer_type = MYSQL_TYPE_STRING
                         if self.conn.use_unicode:
                             o = o.encode(self.conn._charset)
                             temp_strings.append(o)
-                        PyString_AsStringAndSize(o, 
+                        PyBytes_AsStringAndSize(o, 
                             <char **>&b.buffer, &c.st)
                         c.ul = c.st
                         b.length = &c.ul
-                    elif PyBuffer_Check(o):
+                    elif PyBytes_Check(o):
                         b.buffer_type = MYSQL_TYPE_STRING
-                        _oursqlx_PyObject_AsReadBuffer(o, &b.buffer, &c.st)
+                        PyBytes_AsStringAndSize(o, 
+                            <char **>&b.buffer, &c.st)
                         c.ul = c.st
                         b.length = &c.ul
                     elif PyInt_Check(o):
@@ -346,35 +347,35 @@ cdef class _Statement:
                         b.buffer_type = MYSQL_TYPE_DOUBLE
                         c.d = PyFloat_AS_DOUBLE(o)
                         b.buffer = <void *>&c.d
-                    elif isinstance(o, datetime.datetime):
+                    elif PyDateTime_Check(o):
                         b.buffer_type = MYSQL_TYPE_DATETIME
-                        c.t.year = o.year
-                        c.t.month = o.month
-                        c.t.day = o.day
-                        c.t.hour = o.hour
-                        c.t.minute = o.minute
-                        c.t.second = o.second
-                        c.t.second_part = o.microsecond
+                        c.t.year = PyDateTime_GET_YEAR(o)
+                        c.t.month = PyDateTime_GET_MONTH(o)
+                        c.t.day = PyDateTime_GET_DAY(o)
+                        c.t.hour = PyDateTime_DATE_GET_HOUR(o)
+                        c.t.minute = PyDateTime_DATE_GET_MINUTE(o)
+                        c.t.second = PyDateTime_DATE_GET_SECOND(o)
+                        c.t.second_part = PyDateTime_DATE_GET_MICROSECOND(o)
                         b.buffer = <void *>&c.t
-                    elif isinstance(o, datetime.date):
+                    elif PyDate_Check(o):
                         b.buffer_type = MYSQL_TYPE_DATE
-                        c.t.year = o.year
-                        c.t.month = o.month
-                        c.t.day = o.day
+                        c.t.year = PyDateTime_GET_YEAR(o)
+                        c.t.month = PyDateTime_GET_MONTH(o)
+                        c.t.day = PyDateTime_GET_DAY(o)
                         b.buffer = <void *>&c.t
-                    elif isinstance(o, datetime.time):
+                    elif PyTime_Check(o):
                         b.buffer_type = MYSQL_TYPE_TIME
-                        c.t.hour = o.hour
-                        c.t.minute = o.minute
-                        c.t.second = o.second
-                        c.t.second_part = o.microsecond
+                        c.t.hour = PyDateTime_TIME_GET_HOUR(o)
+                        c.t.minute = PyDateTime_TIME_GET_MINUTE(o)
+                        c.t.second = PyDateTime_TIME_GET_SECOND(o)
+                        c.t.second_part = PyDateTime_TIME_GET_MICROSECOND(o)
                         b.buffer = <void *>&c.t
                     elif isinstance(o, decimal.Decimal):
                         b.buffer_type = MYSQL_TYPE_NEWDECIMAL
-                        o = str(o)
+                        o = str(o).encode()
                         temp_strings.append(o)
-                        b.buffer = PyString_AS_STRING(o)
-                        c.ul = PyString_GET_SIZE(o)
+                        b.buffer = PyBytes_AS_STRING(o)
+                        c.ul = PyBytes_GET_SIZE(o)
                         b.length = &c.ul
                     elif isinstance(o, _AbstractIterWrapper):
                         b.buffer_type = MYSQL_TYPE_STRING
@@ -385,16 +386,11 @@ cdef class _Statement:
             if mysql_stmt_bind_param(self.stmt, bind):
                 self._raise_error()
             for i, o in long_strings:
-                # Yaay consistency. 
                 for s in o:
-                    if PyBuffer_Check(s):
-                        _oursqlx_PyObject_AsReadBuffer(s, 
-                            &long_buffer, &long_buffer_size)
-                    else:
-                        if self.conn.use_unicode:
-                            s = s.encode(self.conn._charset)
-                        PyString_AsStringAndSize(s, 
-                            <char **>&long_buffer, &long_buffer_size)
+                    if self.conn.use_unicode:
+                        s = s.encode(self.conn._charset)
+                    PyBytes_AsStringAndSize(s, 
+                        <char **>&long_buffer, &long_buffer_size)
                     if mysql_stmt_send_long_data(self.stmt, i, 
                             <char *>long_buffer, long_buffer_size):
                         self._raise_error()
@@ -449,7 +445,7 @@ cdef class _Statement:
                 # If the string wasn't too long to fit in our minimal buffer,
                 # then we can just copy it out of the buffer.
                 if not c.error:
-                    val = PyString_FromStringAndSize(&d.c, c.length)
+                    val = PyBytes_FromStringAndSize(&d.c, c.length)
                 # If we already have all the results stored clientside, or we
                 # don't care about strings being too long, or we *do* care 
                 # about strings being too long and it's not too long...
@@ -457,13 +453,13 @@ cdef class _Statement:
                         or not self.string_limit 
                         or c.length <= self.string_limit):
                     # First, allocate a string of the necessary length.
-                    val = PyString_FromStringAndSize(NULL, c.length)
+                    val = PyBytes_FromStringAndSize(NULL, c.length)
                     # Then, fill up a MYSQL_BIND that will fetch into the 
                     # aforementioned string.
                     memset(&b_tryagain, 0, sizeof(MYSQL_BIND))
                     b_tryagain.buffer_type = MYSQL_TYPE_BLOB
                     b_tryagain.buffer_length = c.length
-                    b_tryagain.buffer = PyString_AS_STRING(val)
+                    b_tryagain.buffer = PyBytes_AS_STRING(val)
                     # This means that if there is still a truncation error for
                     # whatever reason, something later in the function will
                     # complain.
@@ -483,7 +479,7 @@ cdef class _Statement:
                     # make sure that everything passed back has a file-like
                     # interface.
                     else:
-                        val = cStringIO.StringIO(val)
+                        val = io.BytesIO(val)
                     # And if we're decoding unicode, decode unicode in a 
                     # streaming fashion!
                     if self.conn.use_unicode and not c.is_binary:
@@ -496,19 +492,19 @@ cdef class _Statement:
                         val = val.decode(self.conn._charset)
             elif c.type in (MYSQL_TYPE_DECIMAL, MYSQL_TYPE_NEWDECIMAL):
                 val = decimal.Decimal(
-                    PyString_FromStringAndSize(d.dec, c.length))
+                PyBytes_FromStringAndSize(d.dec, c.length).decode(self.conn._charset))
             # Sometimes mysql likes to give back invalid data instead of doing
             # anything sensible.
             elif c.type in (MYSQL_TYPE_DATETIME, MYSQL_TYPE_TIMESTAMP, 
                     MYSQL_TYPE_DATE) and d.t.year == 0:
                 val = None
             elif c.type in (MYSQL_TYPE_DATETIME, MYSQL_TYPE_TIMESTAMP):
-                val = datetime.datetime(d.t.year, d.t.month, d.t.day, 
+                val = PyDateTime_FromDateAndTime(d.t.year, d.t.month, d.t.day, 
                     d.t.hour, d.t.minute, d.t.second, d.t.second_part)
             elif c.type == MYSQL_TYPE_DATE:
-                val = datetime.date(d.t.year, d.t.month, d.t.day)
+                val = PyDate_FromDate(d.t.year, d.t.month, d.t.day)
             elif c.type == MYSQL_TYPE_TIME:
-                val = datetime.time(
+                val = PyTime_FromTime(
                     d.t.hour, d.t.minute, d.t.second, d.t.second_part)
             elif c.type == MYSQL_TYPE_TINY:
                 if c.flags & UNSIGNED_FLAG == UNSIGNED_FLAG:
@@ -541,7 +537,7 @@ cdef class _Statement:
                 # anyway.
                 val = bitval_from_char_p(<unsigned char *>&d.c, c.length)
             else:
-                val = PyString_FromStringAndSize(&d.c, c.length)
+                val = PyBytes_FromStringAndSize(&d.c, c.length)
                 PyErr_WarnEx(Warning, "unknown column returned as string", 1)
             if c.error:
                 # This *shouldn't* ever happen.
@@ -650,9 +646,9 @@ cdef class _ResultStringStream:
             size = left
         elif size < 0:
             raise ValueError("can't read negative bytes")
-        ret = PyString_FromStringAndSize(NULL, size)
+        ret = PyBytes_FromStringAndSize(NULL, size)
         self.bind.buffer_length = size
-        self.bind.buffer = PyString_AS_STRING(ret)
+        self.bind.buffer = PyBytes_AS_STRING(ret)
         if mysql_stmt_fetch_column(self.stmt.stmt, 
                 &self.bind, self.index, self.offset):
             self.stmt._raise_error()

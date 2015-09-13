@@ -1,3 +1,4 @@
+# cython: language_level=3
 """oursql python bindings for MySQL.
 
 This module is a new, better set of MySQL bindings for python, supporting novel
@@ -5,10 +6,12 @@ features like parameterization!
 """
 
 __author__ = 'Aaron Gallagher <habnabit@gmail.com>'
-__version__ = '0.9.3'
+__version__ = '0.9.4'
 
 include "oursql.pxi"
 include "nogil.pyx"
+
+PyDateTime_IMPORT
 
 cdef unsigned int UNSIGNED_NUM_FLAG = UNSIGNED_FLAG | NUM_FLAG
 
@@ -47,14 +50,14 @@ cdef struct column_output:
     my_bool error
     column_data buf
 
-import exceptions
+import builtins
 
-class Warning(exceptions.Warning): pass
+class Warning(builtins.Warning): pass
 class Note(Warning): pass
 
-class Error(exceptions.StandardError):
+class Error(builtins.Exception):
     def __init__(self, message, errno=None, extra=None):
-        StandardError.__init__(self, errno, message, extra)
+        super(Error, self).__init__(errno, message, extra)
         self.errno = errno
         self.extra = extra
 
@@ -128,5 +131,5 @@ DATETIME = TIMESTAMP = _DBAPITypeObject(
     MYSQL_TYPE_TIMESTAMP, MYSQL_TYPE_DATETIME)
 ROWID = _DBAPITypeObject()
 
-client_info = mysql_get_client_info()
+client_info = PyUnicode_FromString(mysql_get_client_info())
 errnos = _oursqlx_generate_errno_dict()

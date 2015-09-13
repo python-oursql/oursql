@@ -1,5 +1,5 @@
 
-/* generated on Thu Jan 28 11:05:33 2010 */
+/* generated on Wed Feb 24 14:55:22 2010 */
 
 enum _oursqlx_exception_type _oursqlx_exc_from_errno(int err) {
     switch (err) {

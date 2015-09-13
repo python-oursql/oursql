@@ -29,10 +29,6 @@ int _oursqlx_stmt_cursor_prefetch(MYSQL_STMT *stmt, int *buffered) {
 #endif
 }
 
-int _oursqlx_PyObject_AsReadBuffer(PyObject *o, void **b, Py_ssize_t *s) {
-    return PyObject_AsReadBuffer(o, (const void **)b, s);
-}
-
 /* This is JUST for sqlalchemy. I would never have added this if it wasn't
  * unfortunately necessary. :(
  */
@@ -41,14 +37,14 @@ PyObject *_oursqlx_escape_string(MYSQL *conn, PyObject *input) {
     Py_ssize_t input_size;
     PyObject *output;
     unsigned long output_size;
-    if (PyString_AsStringAndSize(input, &input_string, &input_size) == -1)
+    if (PyBytes_AsStringAndSize(input, &input_string, &input_size) == -1)
         return NULL;
-    if (!(output = PyString_FromStringAndSize(NULL, input_size * 2)))
+    if (!(output = PyBytes_FromStringAndSize(NULL, input_size * 2)))
         return NULL;
     output_size = mysql_real_escape_string(
-        conn, PyString_AS_STRING(output), input_string, input_size);
+        conn, PyBytes_AS_STRING(output), input_string, input_size);
     if (output_size != input_size * 2)
-        _PyString_Resize(&output, output_size);
+        _PyBytes_Resize(&output, output_size);
     return output;
 }
 

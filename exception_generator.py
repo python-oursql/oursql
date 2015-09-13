@@ -194,7 +194,7 @@ data = dict(
 
 def main(outfile):
     output = []
-    for exc, consts in sorted(data.iteritems()):
+    for exc, consts in sorted(data.items()):
         for const in consts.split():
             output.append(case_template % dict(const=const))
         output.append(return_template % dict(exc=exc))
@@ -204,4 +204,4 @@ def main(outfile):
     ))
 
 if __name__ == '__main__':
-    main(open(sys.argv[1], 'wb'))
+    main(open(sys.argv[1], 'w'))

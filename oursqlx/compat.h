@@ -14,15 +14,6 @@
 #include "mysqld_error.h"
 #include "errmsg.h"
 #include "Python.h"
-#if PY_VERSION_HEX < 0x02050000
-#  define PyBaseExceptionObject PyObject
-#  define PyErr_WarnEx(exc, msg, _) PyErr_Warn(exc, msg)
-#  ifndef PY_SSIZE_T_MAX
-     typedef int Py_ssize_t;
-#    define PY_SSIZE_T_MAX INT_MAX
-#    define PY_SSIZE_T_MIN INT_MIN
-#  endif
-#endif
 
 #if MYSQL_VERSION_ID < 40102
 #error "This driver requires at least MySQL 4.1.2."
