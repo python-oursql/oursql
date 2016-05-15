@@ -203,7 +203,7 @@ class ZipWithLicense(Command):
 oursql_commands['zipwithlicense'] = ZipWithLicense
 
 setup(
-    name='oursql',
+    name='oursql3',
     version='0.9.4',
     author='Aaron Gallagher',
     author_email='habnabit@gmail.com',
