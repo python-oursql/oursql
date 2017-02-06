@@ -617,7 +617,7 @@ enum _oursqlx_exception_type _oursqlx_exc_from_errno(int err) {
             return _oursqlx_PermissionsError;
 
         default:
-            #if MYSQL_VERSION_ID >= 50700
+            #if MYSQL_VERSION_ID >= 50700 && !defined(ER_ERROR_FIRST)
             {
                 unsigned int i;
                 for(i = 0; i < sizeof(errmsg_section_start)/sizeof(int); ++i) {
